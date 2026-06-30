@@ -8,10 +8,10 @@ import VideoPlayer from './components/VideoPlayer';
 import WebcamGrid from './components/WebcamGrid';
 import Chat from './components/Chat';
 
-// In a real development setup, we point to our local backend server.
-const SERVER_URL = window.location.hostname === 'localhost' 
-  ? 'http://localhost:5001' 
-  : window.location.protocol + '//' + window.location.hostname + ':5001';
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || 
+  (window.location.hostname === 'localhost' 
+    ? 'http://localhost:5001' 
+    : window.location.protocol + '//' + window.location.hostname + ':5001');
 
 export default function App() {
   const [user, setUser] = useState(null);
