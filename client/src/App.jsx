@@ -173,9 +173,10 @@ export default function App() {
     createGuestProfile();
   };
 
-  // 2. Room Join (Connect socket)
   const handleJoinRoom = ({ roomId, nickname, avatar, roomName, isPublic }) => {
-    const newSocket = io(SERVER_URL);
+    const newSocket = io(SERVER_URL, {
+      transports: ['websocket']
+    });
     setSocket(newSocket);
     setMessages([]);
 
