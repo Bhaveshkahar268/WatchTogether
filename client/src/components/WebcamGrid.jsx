@@ -215,72 +215,80 @@ export default function WebcamGrid({
   useEffect(() => {
     let isMounted = true;
 
-    navigator.mediaDevices.getUserMedia({ 
-      video: {
-        width: { ideal: 1280 },
-        height: { ideal: 720 },
-        facingMode: 'user'
-      }, 
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
-    })
-      .then((stream) => {
-        if (!isMounted) {
-          stream.getTracks().forEach(track => track.stop());
-          return;
-        }
-        setLocalStream(stream);
-        localStreamRef.current = stream;
-
-        // If any peer connections were created early, push local tracks to them now!
-        Object.entries(peerConnections.current).forEach(([peerId, pc]) => {
-          const senders = pc.getSenders();
-          stream.getTracks().forEach(track => {
-            const alreadyAdded = senders.some(s => s.track && s.track.kind === track.kind);
-            if (!alreadyAdded) {
-              const sender = pc.addTrack(track, stream);
-              if (!peerSenders.current[peerId]) {
-                peerSenders.current[peerId] = { videoSender: null, audioSender: null };
-              }
-              if (track.kind === 'video') {
-                peerSenders.current[peerId].videoSender = sender;
-              } else if (track.kind === 'audio') {
-                peerSenders.current[peerId].audioSender = sender;
-              }
-            }
-          });
-        });
-        
-        // Notify socket and peers we are ready
-        socket.emit('request-peers');
-      })
-      .catch((err) => {
-        if (!isMounted) return;
-        console.warn('Failed to get media devices with video & audio, trying audio only:', err);
-        setCameraEnabled(false);
-        socket.emit('update-media-status', { cameraOn: false });
-        
-        // Fallback to audio only if webcam is not available or blocked
-        navigator.mediaDevices.getUserMedia({ 
-          video: false, 
+    const acquireMedia = async () => {
+      try {
+        // Try HD first
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'user'
+          }, 
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
-        })
-          .then((stream) => {
-            if (!isMounted) {
-              stream.getTracks().forEach(track => track.stop());
-              return;
-            }
-            setLocalStream(stream);
-            localStreamRef.current = stream;
-            socket.emit('request-peers');
-          })
-          .catch((e) => {
+        });
+        handleStreamSuccess(stream);
+      } catch (err) {
+        console.warn('Failed to get HD video, trying standard video:', err);
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: true, 
+            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+          });
+          handleStreamSuccess(stream);
+        } catch (err2) {
+          if (!isMounted) return;
+          console.warn('Failed to get standard video, trying audio only:', err2);
+          setCameraEnabled(false);
+          socket.emit('update-media-status', { cameraOn: false });
+          
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+              video: false, 
+              audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } 
+            });
+            handleStreamSuccess(stream);
+          } catch (err3) {
             if (!isMounted) return;
-            console.error('All media acquisition failed:', e);
+            console.error('All media acquisition failed:', err3);
             setMicEnabled(false);
             socket.emit('update-media-status', { micOn: false });
             socket.emit('request-peers');
-          });
+          }
+        }
+      }
+    };
+
+    const handleStreamSuccess = (stream) => {
+      if (!isMounted) {
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+      setLocalStream(stream);
+      localStreamRef.current = stream;
+
+      // If any peer connections were created early, push local tracks to them now!
+      Object.entries(peerConnections.current).forEach(([peerId, pc]) => {
+        const senders = pc.getSenders();
+        stream.getTracks().forEach(track => {
+          const alreadyAdded = senders.some(s => s.track && s.track.kind === track.kind);
+          if (!alreadyAdded) {
+            const sender = pc.addTrack(track, stream);
+            if (!peerSenders.current[peerId]) {
+              peerSenders.current[peerId] = { videoSender: null, audioSender: null };
+            }
+            if (track.kind === 'video') {
+              peerSenders.current[peerId].videoSender = sender;
+            } else if (track.kind === 'audio') {
+              peerSenders.current[peerId].audioSender = sender;
+            }
+          }
+        });
       });
+      
+      socket.emit('request-peers');
+    };
+
+    acquireMedia();
 
     return () => {
       isMounted = false;
@@ -320,15 +328,28 @@ export default function WebcamGrid({
       setCameraEnabled(false);
       socket.emit('update-media-status', { cameraOn: false });
     } else {
-      // Turn camera ON (Request crystal-clear HD resolution!)
+      // Turn camera ON (Request crystal-clear HD resolution with standard fallback)
+      let stream = null;
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
+        stream = await navigator.mediaDevices.getUserMedia({ 
           video: {
             width: { ideal: 1280 },
             height: { ideal: 720 },
             facingMode: 'user'
           } 
         });
+      } catch (err) {
+        console.warn('Failed to enable HD camera, trying standard constraints:', err);
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch (err2) {
+          console.error('All camera access failed:', err2);
+          alert('Camera permission denied or camera is unavailable. Please check your browser site settings.');
+          return;
+        }
+      }
+
+      try {
         const newVideoTrack = stream.getVideoTracks()[0];
 
         if (localStreamRef.current) {
@@ -367,7 +388,7 @@ export default function WebcamGrid({
         setCameraEnabled(true);
         socket.emit('update-media-status', { cameraOn: true });
       } catch (err) {
-        console.error('Failed to enable camera hardware:', err);
+        console.error('Failed to configure camera tracks:', err);
       }
     }
   };
@@ -429,6 +450,7 @@ export default function WebcamGrid({
         socket.emit('update-media-status', { micOn: true });
       } catch (err) {
         console.error('Failed to enable microphone hardware:', err);
+        alert('Microphone permission denied or microphone is unavailable. Please check your browser site settings.');
       }
     }
   };
@@ -989,17 +1011,18 @@ function VideoElement({ stream }) {
   );
 }
 
-// Helper Sub-component to attach remote audio stream in the background
+// Helper Sub-component to play remote audio. We use an invisible <video> tag instead of <audio>
+// because mobile Safari and Chrome route <video> tags to the loudspeaker by default, preventing sound from leaking out of the earpiece.
 function RemoteAudio({ stream }) {
-  const audioRef = useRef(null);
+  const videoRef = useRef(null);
 
   useEffect(() => {
-    if (audioRef.current && stream) {
-      audioRef.current.srcObject = stream;
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
     }
   }, [stream]);
 
-  return <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />;
+  return <video ref={videoRef} autoPlay playsInline style={{ display: 'none' }} />;
 }
 
 const styles = {
