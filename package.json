@@ -1,0 +1,14 @@
+{
+  "name": "watch-together-root",
+  "version": "1.0.0",
+  "description": "WatchTogether Root Workspace",
+  "scripts": {
+    "install-all": "npm install && npm install --prefix client && npm install --prefix server",
+    "server": "node server/index.js",
+    "client": "npm run dev --prefix client",
+    "dev": "concurrently \"npm run server\" \"npm run client\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
