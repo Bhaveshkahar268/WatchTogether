@@ -1,3 +1,4 @@
+// Trigger Vercel clean production rebuild with updated environment variables
 import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 import { ArrowLeft, Share2, Shield, ShieldOff, Sparkles, Copy, Check, Users, Maximize, Minimize, MessageSquare, MessageSquareOff } from 'lucide-react';
