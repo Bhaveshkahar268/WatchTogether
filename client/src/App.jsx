@@ -179,13 +179,16 @@ export default function App() {
     setSocket(newSocket);
     setMessages([]);
 
-    newSocket.emit('join-room', {
-      roomId,
-      nickname,
-      avatar,
-      userId: user?.id,
-      roomName,
-      isPublic
+    newSocket.on('connect', () => {
+      console.log('Socket connected/reconnected, joining room:', roomId);
+      newSocket.emit('join-room', {
+        roomId,
+        nickname,
+        avatar,
+        userId: user?.id,
+        roomName,
+        isPublic
+      });
     });
 
     setRoom({
